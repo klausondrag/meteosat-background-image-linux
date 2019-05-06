@@ -11,12 +11,14 @@ click.option = partial(click.option, show_default=True)
 
 BASE_URL = 'http://www.sat.dundee.ac.uk/xrit/000.0E/MSG'
 BASE_DIR = Path('~/.config/i3/images/').expanduser()
+BACKUP_DIR = Path('~/Pictures/meteosat/').expanduser()
 
 
 @click.command()
 @click.option('-mt', '--max-tries', default=2)
 @click.option('-ug/-nug', '--use-grid/--no-use-grid', default=True)
-def main(max_tries: int, use_grid: bool):
+@click.option('-si/-nsi', '--save-image/--no-save-image', default=True)
+def main(max_tries: int, use_grid: bool, save_image: bool):
     grid_text = '_grid' if use_grid else ''
     current_date = datetime.now()
     current_try = 1
@@ -67,10 +69,22 @@ def main(max_tries: int, use_grid: bool):
         f.write(image_response.content)
 
     current_text_path = str(BASE_DIR / 'current.txt')
-    print(f'Writing newest filename {file_name} into {current_text_path }')
+    print(f'Writing newest filename {file_name} into {current_text_path}')
     with open(current_text_path, 'w') as f:
         f.write(file_name)
 
+    if save_image:
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        backup_image_path = BACKUP_DIR / file_name
+        if backup_image_path.exists():
+            print('Image in backup folder already exists. Skipping writing.')
+        else:
+            backup_image_path = str(backup_image_path)
+            print('Saving image as a backup to: ', backup_image_path)
+            with open(backup_image_path, 'wb') as f:
+                f.write(image_response.content)
+
+    print('Calling feh')
     subprocess.run(['feh', '--bg-max', current_image_path])
 
 
