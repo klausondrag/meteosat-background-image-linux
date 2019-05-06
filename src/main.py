@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import subprocess
 from datetime import datetime, timedelta
 from functools import partial
@@ -6,18 +7,74 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import click
+import imageio
 import requests
+from tqdm import tqdm
 
 click.option = partial(click.option, show_default=True)
 
 BASE_URL = 'http://www.sat.dundee.ac.uk/xrit/000.0E/MSG'
 BASE_DIR = Path('~/.config/i3/images/').expanduser()
 SAVE_DIR = Path('~/Pictures/meteosat/').expanduser()
+GRID_SAVE_DIR = SAVE_DIR / 'grid'
+NO_GRID_SAVE_DIR = SAVE_DIR / 'no_grid'
 
 
 @click.group()
 def cli():
     pass
+
+
+
+@cli.command()
+def gif1():
+    with imageio.get_writer(SAVE_DIR / 'no_grid.gif', mode='I', loop=False) as writer:
+        for filename in tqdm(
+            sorted(NO_GRID_SAVE_DIR.glob('*.jpeg'), key=filename_to_int)
+        ):
+            image = imageio.imread(filename)
+            writer.append_data(image)
+
+@cli.command()
+def gif2():
+    with imageio.get_writer(SAVE_DIR / 'grid.gif', mode='I', loop=False) as writer:
+        for filename in tqdm(sorted(GRID_SAVE_DIR.glob('*.jpeg'), key=filename_to_int)):
+            image = imageio.imread(filename)
+            writer.append_data(image)
+
+
+def filename_to_int(filename: str, max_hour_length: int = 4) -> int:
+    filename = filename.name
+    # 01:00 not 13:00
+    # 2019_5_5_100_MSG4_16_S1.jpeg
+
+    filename = filename[: find_nth_char(filename)]
+    # 2019_5_5_100
+
+    # add left of hour otherwise 01:00 and 10:00 become the same
+    hour_start_index = filename.rindex('_') + 1
+    zeros_to_add = max_hour_length - (len(filename) - hour_start_index)
+    filename = (
+        filename[:hour_start_index] + '0' * zeros_to_add + filename[hour_start_index:]
+    )
+    # 2019_5_5_0100
+
+    filename = filename.replace('_', '')
+    filename = int(filename)
+    # 2019550100
+
+    return filename
+
+
+def find_nth_char(s: str, nth_char: int = 4, char: str = '_') -> int:
+    counter = 0
+    for index, c in enumerate(s):
+        if c == char:
+            counter += 1
+        if counter >= nth_char:
+            return index
+
+    return -1
 
 
 @cli.command()
@@ -108,7 +165,7 @@ def download_maybe(url: str, image_path: Path) -> bool:
     print('Trying image: ', image_path.name)
     image_path_string = str(image_path)
     if image_path.exists():
-        print('Image already exists at: ', image_path_string)
+        # print('Image already exists at: ', image_path_string)
         print('Skipping downloading.')
         is_successful = True
     else:

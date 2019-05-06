@@ -12,6 +12,8 @@ pyinstaller = "*"
 requests = "*"
 click = "*"
 aiohttp = "*"
+imageio = "*"
+tqdm = "*"
 
 [requires]
 python_version = "3.7"
