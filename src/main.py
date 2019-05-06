@@ -27,7 +27,7 @@ while current_try <= MAX_RETRIES and not has_successful_request:
 if not has_successful_request:
     exit(1)
 
-soup = BeautifulSoup(r.text)
+soup = BeautifulSoup(r.text, 'html.parser')
 last_upload_hour = soup('tr')[-2]
 last_upload_hour = last_upload_hour('a')[0].text
 # remove trailing slash
