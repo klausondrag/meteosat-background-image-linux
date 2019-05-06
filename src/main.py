@@ -43,5 +43,5 @@ r.raise_for_status()
 
 with open('current.jpeg', 'wb') as f:
     f.write(r.content)
-with open(file_name, 'wb') as f:
-    f.write(r.content)
+with open('current.txt', 'w') as f:
+    f.write(file_name)
