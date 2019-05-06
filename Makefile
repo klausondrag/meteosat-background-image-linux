@@ -1,9 +1,10 @@
 .PHONY: build copy fmt help run
-
 all: fmt help run
 
+file = src/main.py
+
 build:
-	pyinstaller --onefile src/main.py
+	pyinstaller --onefile $(file)
 
 copy:
 	cp dist/main ~/.local/bin/meteosat-background-image
@@ -13,7 +14,7 @@ fmt:
 	black -S src/*.py
 
 help:
-	python src/main.py --help
+	python $(file) --help
 
 run:
-	python src/main.py
+	python $(file)
