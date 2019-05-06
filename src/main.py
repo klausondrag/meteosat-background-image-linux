@@ -2,90 +2,93 @@ import subprocess
 from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
+from typing import Tuple
 
 import click
 import requests
-from bs4 import BeautifulSoup
 
 click.option = partial(click.option, show_default=True)
 
 BASE_URL = 'http://www.sat.dundee.ac.uk/xrit/000.0E/MSG'
 BASE_DIR = Path('~/.config/i3/images/').expanduser()
-BACKUP_DIR = Path('~/Pictures/meteosat/').expanduser()
+SAVE_DIR = Path('~/Pictures/meteosat/').expanduser()
 
 
 @click.command()
-@click.option('-mt', '--max-tries', default=2)
+@click.option('-mt', '--max-tries', default=20)
 @click.option('-ug/-nug', '--use-grid/--no-use-grid', default=True)
-@click.option('-si/-nsi', '--save-image/--no-save-image', default=True)
-def main(max_tries: int, use_grid: bool, save_image: bool):
-    grid_text = '_grid' if use_grid else ''
-    current_date = datetime.utcnow()
-    current_try = 1
-    has_successful_request = False
-    while current_try <= max_tries and not has_successful_request:
-        overview_url = (
-            f'{BASE_URL}/{current_date.year}/{current_date.month}/{current_date.day}/'
-        )
-        print('Getting overview from URL: ', overview_url)
-        overview_response = requests.get(overview_url)
-        has_successful_request = overview_response.ok
-        if not overview_response.ok:
-            print('Bad response: ', overview_response)
-            current_try += 1
-            current_date -= timedelta(days=1)
+def main(max_tries: int, use_grid: bool) -> None:
+    start_date = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    is_successful = False
+    for current_try, current_date in zip(range(max_tries), iter_datetimes(start_date)):
+        url, image_path = construct_from_date(current_date, use_grid)
+        is_successful = download_maybe(url, image_path)
+        if is_successful:
+            break
+        else:
             continue
 
-        soup = BeautifulSoup(overview_response.text, 'html.parser')
-        last_upload_hour = soup('tr')[-2]
-        last_upload_hour = last_upload_hour('a')[0].text
-        # remove trailing slash
-        last_upload_hour = last_upload_hour[:-1]
-
-        # http://www.sat.dundee.ac.uk/xrit/000.0E/MSG/2019/5/5/2200/2019_5_5_2200_MSG4_16_S1_grid.jpeg
-        file_name = (
-            f'{current_date.year}_{current_date.month}_{current_date.day}_{last_upload_hour}'
-            + f'_MSG4_16_S1{grid_text}.jpeg'
-        )
-        # no slash between overview_url and last_upload_hour because it's already in overview_url
-        image_url = f'{overview_url}{last_upload_hour}/{file_name}'
-
-        print('Getting image from URL: ', image_url)
-        image_response = requests.get(image_url)
-        has_successful_request = image_response.ok
-        if not image_response.ok:
-            print('Bad response: ', image_response)
-            current_try += 1
-            current_date -= timedelta(days=1)
-            continue
-
-    if not has_successful_request:
+    if not is_successful:
         print('No image has been successfully downloaded.')
         exit(1)
 
-    current_image_path = str(BASE_DIR / 'current.jpeg')
-    print('Saving image to: ', current_image_path)
-    with open(current_image_path, 'wb') as f:
-        f.write(image_response.content)
+    set_background(image_path)
 
-    current_text_path = str(BASE_DIR / 'current.txt')
-    print(f'Writing newest filename {file_name} into {current_text_path}')
-    with open(current_text_path, 'w') as f:
-        f.write(file_name)
 
-    if save_image:
-        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-        backup_image_path = BACKUP_DIR / file_name
-        if backup_image_path.exists():
-            print('Image in backup folder already exists. Skipping writing.')
+def iter_datetimes(date: datetime):
+    while True:
+        yield date
+        date -= timedelta(hours=1)
+
+
+def get_hour_string(hour: int) -> str:
+    if hour == 0:
+        return '0'
+    else:
+        return f'{hour}00'
+
+
+def construct_from_date(current_date, use_grid: bool) -> Tuple[str, Path]:
+    grid_text = '_grid' if use_grid else ''
+    hour_string = get_hour_string(current_date.hour)
+    overview_url = (
+        f'{BASE_URL}/{current_date.year}/{current_date.month}/{current_date.day}'
+    )
+    filename = (
+        f'{current_date.year}_{current_date.month}_{current_date.day}_{hour_string}'
+        + f'_MSG4_16_S1{grid_text}.jpeg'
+    )
+    url = f'{overview_url}/{hour_string}/{filename}'
+    grid_dir = 'grid' if use_grid else 'no_grid'
+    image_path = SAVE_DIR / grid_dir / filename
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    return url, image_path
+
+
+def download_maybe(url: str, image_path: Path) -> bool:
+    print('Trying image: ', image_path.name)
+    image_path_string = str(image_path)
+    if image_path.exists():
+        print('Image already exists at: ', image_path_string)
+        print('Skipping downloading.')
+        is_successful = True
+    else:
+        print('Getting image from URL: ', url)
+        response = requests.get(url)
+        if response.ok:
+            print('Saving image: ', image_path_string)
+            with open(image_path_string, 'wb') as f:
+                f.write(response.content)
+            is_successful = True
         else:
-            backup_image_path = str(backup_image_path)
-            print('Saving image as a backup to: ', backup_image_path)
-            with open(backup_image_path, 'wb') as f:
-                f.write(image_response.content)
+            print('Bad response: ', response)
+            is_successful = False
+    return is_successful
 
+
+def set_background(image_path: Path) -> None:
     print('Calling feh')
-    subprocess.run(['feh', '--bg-max', current_image_path])
+    subprocess.run(['feh', '--bg-max', image_path])
 
 
 if __name__ == '__main__':

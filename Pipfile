@@ -10,7 +10,6 @@ pyinstaller = "*"
 
 [packages]
 requests = "*"
-beautifulsoup4 = "*"
 click = "*"
 
 [requires]
