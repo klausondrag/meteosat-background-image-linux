@@ -10,6 +10,7 @@ isort = "*"
 [packages]
 requests = "*"
 beautifulsoup4 = "*"
+click = "*"
 
 [requires]
 python_version = "3.7"
