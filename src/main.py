@@ -24,15 +24,32 @@ def cli():
 @click.argument('until-date', type=click.DateTime(formats=['%Y-%m-%d', '%Y-%m-%dT%H']))
 @click.option('-ag/-nag', '--all-grids/--not-all-grids', default=True)
 @click.option('-ug/-nug', '--use-grid/--no-use-grid', default=True)
-def until(until_date: datetime, all_grids: bool, use_grid: bool) -> None:
+@click.option('-ncd', '--n-concurrent-downloads', default=5)
+def until(
+    until_date: datetime, all_grids: bool, use_grid: bool, n_concurrent_downloads: int
+) -> None:
     iter_bools = [True, False] if all_grids else [use_grid]
     start_date = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-    for current_date in iter_datetimes(start_date):
-        if current_date < until_date:
-            break
-        for ug in iter_bools:
-            url, image_path = construct_from_date(current_date, use_grid=ug)
-            download_maybe(url, image_path)
+
+    images_to_download = itertools.product(
+        iter_datetimes(start_date, until_date), iter_bools
+    )
+    images_to_download = [
+        construct_from_date(current_date, use_grid=ug)
+        for current_date, ug in images_to_download
+    ]
+    images_to_download = [
+        download_maybe(url, image_path) for url, image_path in images_to_download
+    ]
+    exit()
+    semaphores = asyncio.Semaphore(n_concurrent_downloads)
+    loop = asyncio.get_event_loop()
+    images_to_download = [
+        download_maybe_async(url, image_path, semaphores)
+        for url, image_path in images_to_download
+    ]
+    loop.run_until_complete(asyncio.wait(images_to_download))
+    loop.close()
 
 
 @cli.command()
@@ -56,10 +73,11 @@ def newest(max_tries: int, use_grid: bool) -> None:
     set_background(image_path)
 
 
-def iter_datetimes(date: datetime):
-    while True:
-        yield date
-        date -= timedelta(hours=1)
+def iter_datetimes(start_date: datetime, until_date: Optional[datetime] = None):
+    current_date = start_date
+    while until_date is None or current_date >= until_date:
+        yield current_date
+        current_date -= timedelta(hours=1)
 
 
 def get_hour_string(hour: int) -> str:
