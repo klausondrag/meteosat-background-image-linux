@@ -13,8 +13,5 @@ fmt:
 	isort src/*.py
 	black -S src/*.py
 
-help:
-	python $(file) --help
-
 run:
-	python $(file)
+	python $(file) newest
