@@ -1,3 +1,4 @@
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -48,3 +49,5 @@ with open(str(current_image_path), 'wb') as f:
     f.write(r.content)
 with open(str(BASE_DIR / 'current.txt'), 'w') as f:
     f.write(file_name)
+
+subprocess.run(['feh', '--bg-max', str(current_image_path)])
