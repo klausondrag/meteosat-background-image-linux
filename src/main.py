@@ -18,6 +18,7 @@ BASE_DIR = Path('~/.config/i3/images/').expanduser()
 SAVE_DIR = Path('~/Pictures/meteosat/').expanduser()
 GRID_SAVE_DIR = SAVE_DIR / 'grid'
 NO_GRID_SAVE_DIR = SAVE_DIR / 'no_grid'
+USE_GRID_TO_DIR = {True: GRID_SAVE_DIR, False: NO_GRID_SAVE_DIR}
 
 
 @click.group()
@@ -27,18 +28,14 @@ def cli():
 
 
 @cli.command()
-def gif1():
-    with imageio.get_writer(SAVE_DIR / 'no_grid.gif', mode='I', loop=False) as writer:
+@click.option('-ug/-nug', '--use-grid/--no-use-grid', default=False)
+def gif(use_grid: bool) -> None:
+    image_directory = USE_GRID_TO_DIR[use_grid]
+    file_path = SAVE_DIR / f'{image_directory.name}.gif'
+    with imageio.get_writer(file_path, mode='I', loop=False) as writer:
         for filename in tqdm(
-            sorted(NO_GRID_SAVE_DIR.glob('*.jpeg'), key=filename_to_int)
+            sorted(image_directory.glob('*.jpeg'), key=filename_to_int)
         ):
-            image = imageio.imread(filename)
-            writer.append_data(image)
-
-@cli.command()
-def gif2():
-    with imageio.get_writer(SAVE_DIR / 'grid.gif', mode='I', loop=False) as writer:
-        for filename in tqdm(sorted(GRID_SAVE_DIR.glob('*.jpeg'), key=filename_to_int)):
             image = imageio.imread(filename)
             writer.append_data(image)
 
@@ -155,8 +152,7 @@ def construct_from_date(current_date, use_grid: bool) -> Tuple[str, Path]:
         + f'_MSG4_16_S1{grid_text}.jpeg'
     )
     url = f'{overview_url}/{hour_string}/{filename}'
-    grid_dir = 'grid' if use_grid else 'no_grid'
-    image_path = SAVE_DIR / grid_dir / filename
+    image_path = SAVE_DIR / USE_GRID_TO_DIR[use_grid] / filename
     image_path.parent.mkdir(parents=True, exist_ok=True)
     return url, image_path
 
