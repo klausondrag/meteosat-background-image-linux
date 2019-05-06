@@ -14,10 +14,27 @@ BASE_DIR = Path('~/.config/i3/images/').expanduser()
 SAVE_DIR = Path('~/Pictures/meteosat/').expanduser()
 
 
-@click.command()
+@click.group()
+def cli():
+    pass
+
+
+@cli.command()
+@click.argument('until-date', type=click.DateTime(formats=['%Y-%m-%d', '%Y-%m-%dT%H']))
+def until(until_date):
+    start_date = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    for current_date in iter_datetimes(start_date):
+        if current_date < until_date:
+            break
+        for use_grid in [True, False]:
+            url, image_path = construct_from_date(current_date, use_grid=use_grid)
+            download_maybe(url, image_path)
+
+
+@cli.command()
 @click.option('-mt', '--max-tries', default=20)
 @click.option('-ug/-nug', '--use-grid/--no-use-grid', default=True)
-def main(max_tries: int, use_grid: bool) -> None:
+def newest(max_tries: int, use_grid: bool) -> None:
     start_date = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
     is_successful = False
     for current_try, current_date in zip(range(max_tries), iter_datetimes(start_date)):
@@ -92,4 +109,4 @@ def set_background(image_path: Path) -> None:
 
 
 if __name__ == '__main__':
-    main()
+    cli()
