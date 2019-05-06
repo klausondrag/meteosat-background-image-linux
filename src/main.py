@@ -68,7 +68,7 @@ def main(max_tries: int, use_grid: bool):
 
     current_text_path = str(BASE_DIR / 'current.txt')
     print(f'Writing newest filename {file_name} into {current_text_path }')
-    with open(current_text_path , 'w') as f:
+    with open(current_text_path, 'w') as f:
         f.write(file_name)
 
     subprocess.run(['feh', '--bg-max', current_image_path])
