@@ -20,7 +20,7 @@ BACKUP_DIR = Path('~/Pictures/meteosat/').expanduser()
 @click.option('-si/-nsi', '--save-image/--no-save-image', default=True)
 def main(max_tries: int, use_grid: bool, save_image: bool):
     grid_text = '_grid' if use_grid else ''
-    current_date = datetime.now()
+    current_date = datetime.utcnow()
     current_try = 1
     has_successful_request = False
     while current_try <= max_tries and not has_successful_request:
