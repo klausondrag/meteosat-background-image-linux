@@ -21,13 +21,16 @@ def cli():
 
 @cli.command()
 @click.argument('until-date', type=click.DateTime(formats=['%Y-%m-%d', '%Y-%m-%dT%H']))
-def until(until_date):
+@click.option('-ag/-nag', '--all-grids/--not-all-grids', default=True)
+@click.option('-ug/-nug', '--use-grid/--no-use-grid', default=True)
+def until(until_date: datetime, all_grids: bool, use_grid: bool) -> None:
+    iter_bools = [True, False] if all_grids else [use_grid]
     start_date = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
     for current_date in iter_datetimes(start_date):
         if current_date < until_date:
             break
-        for use_grid in [True, False]:
-            url, image_path = construct_from_date(current_date, use_grid=use_grid)
+        for ug in iter_bools:
+            url, image_path = construct_from_date(current_date, use_grid=ug)
             download_maybe(url, image_path)
 
 
