@@ -1,6 +1,9 @@
-.PHONY: fmt help run
+.PHONY: fmt help build run
 
-all: fmt help run
+all: fmt help run build
+
+build:
+	pyinstaller --onefile src/main.py
 
 fmt:
 	isort src/*.py
