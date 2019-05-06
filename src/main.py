@@ -1,8 +1,9 @@
+import asyncio
 import subprocess
 from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import click
 import requests
@@ -103,6 +104,23 @@ def download_maybe(url: str, image_path: Path) -> bool:
         else:
             print('Bad response: ', response)
             is_successful = False
+    return is_successful
+
+
+async def download_maybe_async(
+    url: str, image_path: Path, semaphores: Optional[asyncio.Semaphore] = None
+) -> bool:
+    print('Trying image: ', image_path.name)
+    image_path_string = str(image_path)
+    if image_path.exists():
+        # print('Image already exists at: ', image_path_string)
+        print('Skipping downloading.')
+        is_successful = True
+    else:
+        print('Getting image from URL: ', url)
+        async with semaphores:
+            await asyncio.sleep(1)
+            return True
     return is_successful
 
 
