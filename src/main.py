@@ -33,10 +33,10 @@ last_upload_hour = last_upload_hour('a')[0].text
 # remove trailing slash
 last_upload_hour = last_upload_hour[:-1]
 
-# http://www.sat.dundee.ac.uk/xrit/000.0E/MSG/2019/5/5/2200/2019_5_5_2200_MSG4_16_S4_grid.jpeg
+# http://www.sat.dundee.ac.uk/xrit/000.0E/MSG/2019/5/5/2200/2019_5_5_2200_MSG4_16_S1_grid.jpeg
 file_name = (
     f'{current_date.year}_{current_date.month}_{current_date.day}_{last_upload_hour}'
-    + f'_MSG4_16_S4{grid_text}.jpeg'
+    + f'_MSG4_16_S1{grid_text}.jpeg'
 )
 # no slash between overview_url and last_upload_hour because it's already in overview_url
 image_url = f'{overview_url}{last_upload_hour}/{file_name}'
