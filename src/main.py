@@ -43,7 +43,7 @@ def gif2():
             writer.append_data(image)
 
 
-def filename_to_int(filename: str, max_hour_length: int = 4) -> int:
+def filename_to_int(filename: Path, max_hour_length: int = 4) -> int:
     filename = filename.name
     # 01:00 not 13:00
     # 2019_5_5_100_MSG4_16_S1.jpeg
