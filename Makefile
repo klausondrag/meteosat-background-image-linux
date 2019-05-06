@@ -1,10 +1,13 @@
-.PHONY: fmt run
+.PHONY: fmt help run
 
-all: fmt run
+all: fmt help run
 
 fmt:
 	isort src/*.py
 	black -S src/*.py
+
+help:
+	python src/main.py --help
 
 run:
 	python src/main.py
