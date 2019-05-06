@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
@@ -6,6 +7,7 @@ from bs4 import BeautifulSoup
 MAX_RETRIES = 3
 USE_GRID = True
 BASE_URL = 'http://www.sat.dundee.ac.uk/xrit/000.0E/MSG'
+BASE_DIR = Path('~/.config/i3/images/').expanduser()
 grid_text = '_grid' if USE_GRID else ''
 
 current_date = datetime.now()
@@ -41,7 +43,8 @@ image_url = f'{overview_url}{last_upload_hour}/{file_name}'
 r = requests.get(image_url)
 r.raise_for_status()
 
-with open('current.jpeg', 'wb') as f:
+current_image_path = BASE_DIR / 'current.jpeg'
+with open(str(current_image_path), 'wb') as f:
     f.write(r.content)
-with open('current.txt', 'w') as f:
+with open(str(BASE_DIR / 'current.txt'), 'w') as f:
     f.write(file_name)
