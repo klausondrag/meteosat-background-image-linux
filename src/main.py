@@ -2,6 +2,7 @@ import asyncio
 import itertools
 import subprocess
 from datetime import datetime, timedelta
+from enum import Enum
 from functools import partial
 from pathlib import Path
 from typing import Optional, Tuple
@@ -17,9 +18,26 @@ click.option = partial(click.option, show_default=True)
 BASE_URL = 'http://www.sat.dundee.ac.uk/xrit/000.0E/MSG'
 BASE_DIR = Path('~/.config/i3/images/').expanduser()
 SAVE_DIR = Path('~/Pictures/meteosat/').expanduser()
-GRID_SAVE_DIR = SAVE_DIR / 'grid'
-NO_GRID_SAVE_DIR = SAVE_DIR / 'no_grid'
-USE_GRID_TO_DIR = {True: GRID_SAVE_DIR, False: NO_GRID_SAVE_DIR}
+
+
+class Quality(Enum):
+    LOW = 'S4'
+    MEDIUM = 'S2'
+    HIGH = 'S1'
+
+
+possible_qualities = [q.name.lower() for q in Quality]
+
+
+class Grid(Enum):
+    USE = 'grid'
+    DONT_USE = 'no_grid'
+
+
+def get_save_dir(grid: Grid, quality: Quality) -> Path:
+    path = SAVE_DIR / grid.value / quality.value
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 @click.group()
@@ -27,15 +45,27 @@ def cli():
     pass
 
 
+# fix file name when saving for better file browser support???
+# gif append
+# inner loop grid or outer
+# add tqdm to download
+# aiohttp
+# random sleep to be nice
+# optimize gif size
+# write day on gif
+
 
 @cli.command()
-@click.option('-ug/-nug', '--use-grid/--no-use-grid', default=False)
-def gif(use_grid: bool) -> None:
-    image_directory = USE_GRID_TO_DIR[use_grid]
+@click.option('-ug/-nug', '--use-grid/--no-use-grid', default=True)
+@click.option('-q', '--quality', default=Quality.LOW.name.lower(), type=click.Choice(possible_qualities))
+def gif(use_grid: bool, quality: str) -> None:
+    grid = Grid.USE if use_grid else Grid.DONT_USE
+    quality = Quality[quality.upper()]
+    image_directory = get_save_dir(grid, quality)
     file_path = SAVE_DIR / f'{image_directory.name}.gif'
     with imageio.get_writer(file_path, mode='I', loop=False) as writer:
         for filename in tqdm(
-            sorted(image_directory.glob('*.jpeg'), key=filename_to_int)
+                sorted(image_directory.glob('*.jpeg'), key=filename_to_int)
         ):
             image = imageio.imread(filename)
             writer.append_data(image)
@@ -53,7 +83,7 @@ def filename_to_int(filename: Path, max_hour_length: int = 4) -> int:
     hour_start_index = filename.rindex('_') + 1
     zeros_to_add = max_hour_length - (len(filename) - hour_start_index)
     filename = (
-        filename[:hour_start_index] + '0' * zeros_to_add + filename[hour_start_index:]
+            filename[:hour_start_index] + '0' * zeros_to_add + filename[hour_start_index:]
     )
     # 2019_5_5_0100
 
@@ -79,19 +109,21 @@ def find_nth_char(s: str, nth_char: int = 4, char: str = '_') -> int:
 @click.argument('until-date', type=click.DateTime(formats=['%Y-%m-%d', '%Y-%m-%dT%H']))
 @click.option('-ag/-nag', '--all-grids/--not-all-grids', default=True)
 @click.option('-ug/-nug', '--use-grid/--no-use-grid', default=True)
+@click.option('-q', '--quality', default=Quality.LOW.name.lower(), type=click.Choice(possible_qualities))
 @click.option('-ncd', '--n-concurrent-downloads', default=5)
 def until(
-    until_date: datetime, all_grids: bool, use_grid: bool, n_concurrent_downloads: int
+        until_date: datetime, all_grids: bool, use_grid: bool, quality: str, n_concurrent_downloads: int
 ) -> None:
-    iter_bools = [True, False] if all_grids else [use_grid]
+    iter_bools = list(Grid) if all_grids else [Grid.USE if use_grid else Grid.DONT_USE]
+    quality = Quality[quality.upper()]
     start_date = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
 
     images_to_download = itertools.product(
         iter_datetimes(start_date, until_date), iter_bools
     )
     images_to_download = [
-        construct_from_date(current_date, use_grid=ug)
-        for current_date, ug in images_to_download
+        construct_from_date(current_date, grid, quality)
+        for current_date, grid in images_to_download
     ]
 
     loop = asyncio.get_event_loop()
@@ -143,11 +175,14 @@ async def fetch(url, session):
 @cli.command()
 @click.option('-mt', '--max-tries', default=20)
 @click.option('-ug/-nug', '--use-grid/--no-use-grid', default=True)
-def newest(max_tries: int, use_grid: bool) -> None:
+@click.option('-q', '--quality', default=Quality.LOW.name.lower(), type=click.Choice(possible_qualities))
+def newest(max_tries: int, use_grid: bool, quality: str) -> None:
+    grid = Grid.USE if use_grid else Grid.DONT_USE
+    quality = Quality[quality.upper()]
     start_date = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
     is_successful = False
     for current_try, current_date in zip(range(max_tries), iter_datetimes(start_date)):
-        url, image_path = construct_from_date(current_date, use_grid)
+        url, image_path = construct_from_date(current_date, grid, quality)
         is_successful = download_maybe(url, image_path)
         if is_successful:
             break
@@ -168,19 +203,19 @@ def iter_datetimes(start_date: datetime, until_date: Optional[datetime] = None):
         current_date -= timedelta(hours=1)
 
 
-def construct_from_date(current_date, use_grid: bool) -> Tuple[str, Path]:
-    grid_text = '_grid' if use_grid else ''
-
+def construct_from_date(current_date, grid: Grid, quality: Quality) -> Tuple[str, Path]:
     overview_url = (
         f'{BASE_URL}/{current_date.year}/{current_date.month}/{current_date.day}'
     )
     server_hour_string = get_server_hour_string(current_date.hour)
-    server_filename = get_filename(current_date, server_hour_string, grid_text)
+    server_filename = get_server_filename(
+        current_date, server_hour_string, grid, quality
+    )
     url = f'{overview_url}/{server_hour_string}/{server_filename}'
 
     local_hour_string = get_local_hour_string(current_date.hour)
-    local_filename = get_filename(current_date, local_hour_string, grid_text)
-    image_path = SAVE_DIR / USE_GRID_TO_DIR[use_grid] / local_filename
+    local_filename = get_local_filename(current_date, local_hour_string, grid, quality)
+    image_path = get_save_dir(grid, quality) / local_filename
     image_path.parent.mkdir(parents=True, exist_ok=True)
 
     return url, image_path
@@ -202,10 +237,23 @@ def get_local_hour_string(hour: int) -> str:
         return f'{hour}00'
 
 
-def get_filename(current_date: datetime, hour_string: str, grid_text) -> str:
+def get_server_filename(
+        current_date: datetime, hour_string: str, grid: Grid, quality: Quality
+) -> str:
+    grid_text = ('_' + grid.value) if grid == Grid.USE else ''
     return (
-        f'{current_date.year}_{current_date.month}_{current_date.day}_{hour_string}'
-        + f'_MSG4_16_S1{grid_text}.jpeg'
+            current_date.strftime('%Y_%-m_%-d')
+            + f'_{hour_string}_MSG4_16_{quality.value}{grid_text}.jpeg'
+    )
+
+
+def get_local_filename(
+        current_date: datetime, hour_string: str, grid: Grid, quality: Quality
+) -> str:
+    grid_text = ('_' + grid.value) if grid == Grid.USE else ''
+    return (
+            current_date.strftime('%Y-%m-%dT%H%M')
+            + f'_MSG4_16_{quality.value}{grid_text}.jpeg'
     )
 
 
