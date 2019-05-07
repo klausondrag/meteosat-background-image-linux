@@ -168,27 +168,45 @@ def iter_datetimes(start_date: datetime, until_date: Optional[datetime] = None):
         current_date -= timedelta(hours=1)
 
 
-def get_hour_string(hour: int) -> str:
+def construct_from_date(current_date, use_grid: bool) -> Tuple[str, Path]:
+    grid_text = '_grid' if use_grid else ''
+
+    overview_url = (
+        f'{BASE_URL}/{current_date.year}/{current_date.month}/{current_date.day}'
+    )
+    server_hour_string = get_server_hour_string(current_date.hour)
+    server_filename = get_filename(current_date, server_hour_string, grid_text)
+    url = f'{overview_url}/{server_hour_string}/{server_filename}'
+
+    local_hour_string = get_local_hour_string(current_date.hour)
+    local_filename = get_filename(current_date, local_hour_string, grid_text)
+    image_path = SAVE_DIR / USE_GRID_TO_DIR[use_grid] / local_filename
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+
+    return url, image_path
+
+
+def get_server_hour_string(hour: int) -> str:
     if hour == 0:
         return '0'
     else:
         return f'{hour}00'
 
 
-def construct_from_date(current_date, use_grid: bool) -> Tuple[str, Path]:
-    grid_text = '_grid' if use_grid else ''
-    hour_string = get_hour_string(current_date.hour)
-    overview_url = (
-        f'{BASE_URL}/{current_date.year}/{current_date.month}/{current_date.day}'
-    )
-    filename = (
+def get_local_hour_string(hour: int) -> str:
+    if hour == 0:
+        return '0'
+    elif 1 < hour <= 9:
+        return f'0{hour}00'
+    else:
+        return f'{hour}00'
+
+
+def get_filename(current_date: datetime, hour_string: str, grid_text) -> str:
+    return (
         f'{current_date.year}_{current_date.month}_{current_date.day}_{hour_string}'
         + f'_MSG4_16_S1{grid_text}.jpeg'
     )
-    url = f'{overview_url}/{hour_string}/{filename}'
-    image_path = SAVE_DIR / USE_GRID_TO_DIR[use_grid] / filename
-    image_path.parent.mkdir(parents=True, exist_ok=True)
-    return url, image_path
 
 
 def download_maybe(url: str, image_path: Path) -> bool:
