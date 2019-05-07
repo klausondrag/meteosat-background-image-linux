@@ -6,6 +6,7 @@ from functools import partial
 from pathlib import Path
 from typing import Optional, Tuple
 
+import aiohttp
 import click
 import imageio
 import requests
@@ -92,18 +93,51 @@ def until(
         construct_from_date(current_date, use_grid=ug)
         for current_date, ug in images_to_download
     ]
-    images_to_download = [
-        download_maybe(url, image_path) for url, image_path in images_to_download
-    ]
-    exit()
-    semaphores = asyncio.Semaphore(n_concurrent_downloads)
+
     loop = asyncio.get_event_loop()
-    images_to_download = [
-        download_maybe_async(url, image_path, semaphores)
-        for url, image_path in images_to_download
-    ]
-    loop.run_until_complete(asyncio.wait(images_to_download))
-    loop.close()
+    future = asyncio.ensure_future(run(images_to_download, n_concurrent_downloads))
+    loop.run_until_complete(future)
+
+
+async def run(images_to_download, n_concurrent_downloads):
+    tasks = []
+    # create instance of Semaphore
+    sem = asyncio.Semaphore(n_concurrent_downloads)
+
+    # Create client session that will ensure we dont open new connection
+    # per each request.
+    async with aiohttp.ClientSession() as session:
+        for url, image_path in images_to_download:
+            print('Trying image: ', image_path.name)
+            if image_path.exists():
+                # print('Image already exists at: ', image_path_string)
+                print('Skipping downloading.')
+            else:
+                print('Getting image from URL: ', url)
+                task = asyncio.ensure_future(bound_fetch(url, image_path, session, sem))
+                tasks.append(task)
+
+        responses = asyncio.gather(*tasks)
+        await responses
+
+
+async def bound_fetch(url, image_path, session, sem):
+    async with sem:
+        error, image = await fetch(url, session)
+
+        if not error:
+            print('Saving image:', image_path.name)
+            with open(str(image_path), 'wb') as f:
+                f.write(image)
+
+
+async def fetch(url, session):
+    async with session.get(url) as response:
+        if response.status != 200:
+            print('Bad response:', url, response.status, response.reason)
+            return True, None
+        else:
+            return False, await response.read()
 
 
 @cli.command()
@@ -175,23 +209,6 @@ def download_maybe(url: str, image_path: Path) -> bool:
         else:
             print('Bad response: ', response)
             is_successful = False
-    return is_successful
-
-
-async def download_maybe_async(
-    url: str, image_path: Path, semaphores: Optional[asyncio.Semaphore] = None
-) -> bool:
-    print('Trying image: ', image_path.name)
-    image_path_string = str(image_path)
-    if image_path.exists():
-        # print('Image already exists at: ', image_path_string)
-        print('Skipping downloading.')
-        is_successful = True
-    else:
-        print('Getting image from URL: ', url)
-        async with semaphores:
-            await asyncio.sleep(1)
-            return True
     return is_successful
 
 
