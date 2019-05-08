@@ -9,7 +9,9 @@ from typing import Optional, Tuple
 
 import aiohttp
 import click
+import cv2
 import imageio
+import numpy as np
 import requests
 from tqdm import tqdm
 
@@ -57,7 +59,12 @@ def cli():
 
 @cli.command()
 @click.option('-ug/-nug', '--use-grid/--no-use-grid', default=True)
-@click.option('-q', '--quality', default=Quality.LOW.name.lower(), type=click.Choice(possible_qualities))
+@click.option(
+    '-q',
+    '--quality',
+    default=Quality.LOW.name.lower(),
+    type=click.Choice(possible_qualities),
+)
 def gif(use_grid: bool, quality: str) -> None:
     grid = Grid.USE if use_grid else Grid.DONT_USE
     quality = Quality[quality.upper()]
@@ -65,7 +72,7 @@ def gif(use_grid: bool, quality: str) -> None:
     file_path = SAVE_DIR / f'{image_directory.name}.gif'
     with imageio.get_writer(file_path, mode='I', loop=False) as writer:
         for filename in tqdm(
-                sorted(image_directory.glob('*.jpeg'), key=filename_to_int)
+            sorted(image_directory.glob('*.jpeg'), key=filename_to_int)
         ):
             image = imageio.imread(filename)
             writer.append_data(image)
@@ -83,7 +90,7 @@ def filename_to_int(filename: Path, max_hour_length: int = 4) -> int:
     hour_start_index = filename.rindex('_') + 1
     zeros_to_add = max_hour_length - (len(filename) - hour_start_index)
     filename = (
-            filename[:hour_start_index] + '0' * zeros_to_add + filename[hour_start_index:]
+        filename[:hour_start_index] + '0' * zeros_to_add + filename[hour_start_index:]
     )
     # 2019_5_5_0100
 
@@ -109,10 +116,19 @@ def find_nth_char(s: str, nth_char: int = 4, char: str = '_') -> int:
 @click.argument('until-date', type=click.DateTime(formats=['%Y-%m-%d', '%Y-%m-%dT%H']))
 @click.option('-ag/-nag', '--all-grids/--not-all-grids', default=True)
 @click.option('-ug/-nug', '--use-grid/--no-use-grid', default=True)
-@click.option('-q', '--quality', default=Quality.LOW.name.lower(), type=click.Choice(possible_qualities))
+@click.option(
+    '-q',
+    '--quality',
+    default=Quality.LOW.name.lower(),
+    type=click.Choice(possible_qualities),
+)
 @click.option('-ncd', '--n-concurrent-downloads', default=5)
 def until(
-        until_date: datetime, all_grids: bool, use_grid: bool, quality: str, n_concurrent_downloads: int
+    until_date: datetime,
+    all_grids: bool,
+    use_grid: bool,
+    quality: str,
+    n_concurrent_downloads: int,
 ) -> None:
     iter_bools = list(Grid) if all_grids else [Grid.USE if use_grid else Grid.DONT_USE]
     quality = Quality[quality.upper()]
@@ -139,31 +155,39 @@ async def run(images_to_download, n_concurrent_downloads):
     # Create client session that will ensure we dont open new connection
     # per each request.
     async with aiohttp.ClientSession() as session:
-        for url, image_path in images_to_download:
+        for url, image_path, date_text in images_to_download:
             print('Trying image: ', image_path.name)
             if image_path.exists():
                 # print('Image already exists at: ', image_path_string)
                 print('Skipping downloading.')
             else:
                 print('Getting image from URL: ', url)
-                task = asyncio.ensure_future(bound_fetch(url, image_path, session, sem))
+                task = asyncio.ensure_future(
+                    bound_fetch(url, image_path, date_text, session, sem)
+                )
                 tasks.append(task)
 
         responses = asyncio.gather(*tasks)
         await responses
 
 
-async def bound_fetch(url, image_path, session, sem):
-    async with sem:
+async def bound_fetch(
+    url: str,
+    image_path: Path,
+    date_text: str,
+    session: aiohttp.client.ClientSession,
+    semaphore: asyncio.locks.Semaphore,
+) -> None:
+    async with semaphore:
         error, image = await fetch(url, session)
 
         if not error:
-            print('Saving image:', image_path.name)
-            with open(str(image_path), 'wb') as f:
-                f.write(image)
+            save_image(image, str(image_path), date_text)
 
 
-async def fetch(url, session):
+async def fetch(
+    url: str, session: aiohttp.client.ClientSession
+) -> Tuple[bool, Optional[bytes]]:
     async with session.get(url) as response:
         if response.status != 200:
             print('Bad response:', url, response.status, response.reason)
@@ -175,15 +199,20 @@ async def fetch(url, session):
 @cli.command()
 @click.option('-mt', '--max-tries', default=20)
 @click.option('-ug/-nug', '--use-grid/--no-use-grid', default=True)
-@click.option('-q', '--quality', default=Quality.LOW.name.lower(), type=click.Choice(possible_qualities))
+@click.option(
+    '-q',
+    '--quality',
+    default=Quality.LOW.name.lower(),
+    type=click.Choice(possible_qualities),
+)
 def newest(max_tries: int, use_grid: bool, quality: str) -> None:
     grid = Grid.USE if use_grid else Grid.DONT_USE
     quality = Quality[quality.upper()]
     start_date = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
     is_successful = False
     for current_try, current_date in zip(range(max_tries), iter_datetimes(start_date)):
-        url, image_path = construct_from_date(current_date, grid, quality)
-        is_successful = download_maybe(url, image_path)
+        url, image_path, date_text = construct_from_date(current_date, grid, quality)
+        is_successful = download_maybe(url, image_path, date_text)
         if is_successful:
             break
         else:
@@ -203,7 +232,9 @@ def iter_datetimes(start_date: datetime, until_date: Optional[datetime] = None):
         current_date -= timedelta(hours=1)
 
 
-def construct_from_date(current_date, grid: Grid, quality: Quality) -> Tuple[str, Path]:
+def construct_from_date(
+    current_date, grid: Grid, quality: Quality
+) -> Tuple[str, Path, str]:
     overview_url = (
         f'{BASE_URL}/{current_date.year}/{current_date.month}/{current_date.day}'
     )
@@ -218,7 +249,9 @@ def construct_from_date(current_date, grid: Grid, quality: Quality) -> Tuple[str
     image_path = get_save_dir(grid, quality) / local_filename
     image_path.parent.mkdir(parents=True, exist_ok=True)
 
-    return url, image_path
+    date_text = current_date.strftime('%Y-%m-%dT%H%M')
+
+    return url, image_path, date_text
 
 
 def get_server_hour_string(hour: int) -> str:
@@ -238,26 +271,26 @@ def get_local_hour_string(hour: int) -> str:
 
 
 def get_server_filename(
-        current_date: datetime, hour_string: str, grid: Grid, quality: Quality
+    current_date: datetime, hour_string: str, grid: Grid, quality: Quality
 ) -> str:
     grid_text = ('_' + grid.value) if grid == Grid.USE else ''
     return (
-            current_date.strftime('%Y_%-m_%-d')
-            + f'_{hour_string}_MSG4_16_{quality.value}{grid_text}.jpeg'
+        current_date.strftime('%Y_%-m_%-d')
+        + f'_{hour_string}_MSG4_16_{quality.value}{grid_text}.jpeg'
     )
 
 
 def get_local_filename(
-        current_date: datetime, hour_string: str, grid: Grid, quality: Quality
+    current_date: datetime, hour_string: str, grid: Grid, quality: Quality
 ) -> str:
     grid_text = ('_' + grid.value) if grid == Grid.USE else ''
     return (
-            current_date.strftime('%Y-%m-%dT%H%M')
-            + f'_MSG4_16_{quality.value}{grid_text}.jpeg'
+        current_date.strftime('%Y-%m-%dT%H%M')
+        + f'_MSG4_16_{quality.value}{grid_text}.jpeg'
     )
 
 
-def download_maybe(url: str, image_path: Path) -> bool:
+def download_maybe(url: str, image_path: Path, date_text: str) -> bool:
     print('Trying image: ', image_path.name)
     image_path_string = str(image_path)
     if image_path.exists():
@@ -268,14 +301,27 @@ def download_maybe(url: str, image_path: Path) -> bool:
         print('Getting image from URL: ', url)
         response = requests.get(url)
         if response.ok:
-            print('Saving image: ', image_path_string)
-            with open(image_path_string, 'wb') as f:
-                f.write(response.content)
+            save_image(response.content, image_path_string, date_text)
             is_successful = True
         else:
             print('Bad response: ', response)
             is_successful = False
     return is_successful
+
+
+def save_image(image: bytes, image_path_string: str, date_text: str) -> None:
+    print('Saving image: ', image_path_string)
+    img_array = np.asarray(bytearray(image), dtype=np.uint8)
+    image = cv2.imdecode(img_array, cv2.IMREAD_UNCHANGED)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    text_position = (10, 60)
+    font_scale = 0.75
+    font_color = (255, 255, 255)
+    line_type = 0
+    cv2.putText(
+        image, date_text, text_position, font, font_scale, font_color, line_type
+    )
+    cv2.imwrite(image_path_string, image)
 
 
 def set_background(image_path: Path) -> None:
